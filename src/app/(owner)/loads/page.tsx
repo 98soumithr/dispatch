@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { CsvUploadModal, downloadTemplate } from "@/components/csv-upload";
+import { ManualAssignModal } from "@/components/manual-assign-modal";
 import { EQUIPMENT_TYPES } from "@/lib/constants";
 import {
   formatDate,
@@ -40,6 +41,7 @@ export default function LoadsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [equipmentFilter, setEquipmentFilter] = useState<string>("all");
   const [showCsv, setShowCsv] = useState(false);
+  const [assignFor, setAssignFor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   async function load() {
@@ -161,19 +163,20 @@ export default function LoadsPage() {
               <th className="text-left px-3 py-2 font-medium">Equipment</th>
               <th className="text-left px-3 py-2 font-medium">Pickup</th>
               <th className="text-left px-3 py-2 font-medium">Status</th>
+              <th className="text-left px-3 py-2 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-slate-500">
+                <td colSpan={8} className="px-3 py-8 text-center text-slate-500">
                   Loading…
                 </td>
               </tr>
             )}
             {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-slate-500">
+                <td colSpan={8} className="px-3 py-8 text-center text-slate-500">
                   No loads match your filters.
                 </td>
               </tr>
@@ -198,6 +201,27 @@ export default function LoadsPage() {
                     {l.status.replace("_", " ")}
                   </span>
                 </td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    {l.status === "new" && (
+                      <button
+                        type="button"
+                        onClick={() => setAssignFor(l.id)}
+                        className="text-slate-700 hover:underline"
+                      >
+                        Assign
+                      </button>
+                    )}
+                    {(l.status === "new" || l.status === "assigned") && (
+                      <Link
+                        href={`/loads/${l.id}/edit`}
+                        className="text-slate-700 hover:underline"
+                      >
+                        Edit
+                      </Link>
+                    )}
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -209,6 +233,15 @@ export default function LoadsPage() {
           companyId={companyId}
           onClose={() => setShowCsv(false)}
           onUploaded={load}
+        />
+      )}
+
+      {assignFor && companyId && (
+        <ManualAssignModal
+          loadId={assignFor}
+          companyId={companyId}
+          onClose={() => setAssignFor(null)}
+          onAssigned={load}
         />
       )}
     </div>
