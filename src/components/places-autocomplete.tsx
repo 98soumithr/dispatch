@@ -124,3 +124,21 @@ export async function reverseGeocode(
     return null;
   }
 }
+
+// Forward-geocode a string address into {text, lat, lng}.
+export async function geocodeAddress(address: string): Promise<PlaceValue> {
+  try {
+    await loadGoogleMaps();
+    const geocoder = new google.maps.Geocoder();
+    const result = await geocoder.geocode({ address });
+    const r = result.results[0];
+    if (!r) return { text: address, lat: null, lng: null };
+    return {
+      text: r.formatted_address ?? address,
+      lat: r.geometry.location.lat(),
+      lng: r.geometry.location.lng(),
+    };
+  } catch {
+    return { text: address, lat: null, lng: null };
+  }
+}
