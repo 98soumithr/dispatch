@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PushPermissionPrompt } from "@/components/push-permission-prompt";
 
 const ownerNav = [
   { href: "/dashboard", label: "Dashboard" },
@@ -13,6 +14,7 @@ export default function OwnerLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <div className="min-h-screen flex flex-col">
+      <PushPermissionPrompt />
       <header className="border-b border-slate-200 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-14">
           <Link href="/dashboard" className="font-semibold tracking-tight">

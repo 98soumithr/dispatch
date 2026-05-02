@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { GpsTracker } from "@/components/gps-tracker";
+import { PushPermissionPrompt } from "@/components/push-permission-prompt";
 
 const driverNav = [
   { href: "/driver", label: "Home" },
@@ -14,6 +15,7 @@ export default function DriverLayout({
   return (
     <div className="min-h-screen flex flex-col">
       <GpsTracker />
+      <PushPermissionPrompt />
       <header className="border-b border-slate-200 bg-white sticky top-0 z-10">
         <div className="px-4 flex items-center justify-between h-14">
           <Link href="/driver" className="font-semibold tracking-tight">
