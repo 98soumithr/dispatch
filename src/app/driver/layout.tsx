@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { GpsTracker } from "@/components/gps-tracker";
 
 const driverNav = [
   { href: "/driver", label: "Home" },
@@ -12,6 +13,7 @@ export default function DriverLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <div className="min-h-screen flex flex-col">
+      <GpsTracker />
       <header className="border-b border-slate-200 bg-white sticky top-0 z-10">
         <div className="px-4 flex items-center justify-between h-14">
           <Link href="/driver" className="font-semibold tracking-tight">
