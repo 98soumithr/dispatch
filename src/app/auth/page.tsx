@@ -25,9 +25,12 @@ export default function AuthPage() {
     setInfo(null);
 
     const supabase = createClient();
+    // Pass role in user metadata so the on_auth_user_created trigger can
+    // populate public.profiles atomically (no client-side insert needed).
     const { data, error: authErr } = await supabase.auth.signUp({
       email,
       password,
+      options: { data: { role } },
     });
     if (authErr) {
       setError(authErr.message);
@@ -35,23 +38,12 @@ export default function AuthPage() {
       return;
     }
 
-    const user = data.user;
-    if (!user) {
-      // Email confirmation flow: Supabase returned no session.
+    if (!data.session) {
+      // Email confirmation is enabled in Supabase Auth settings — user was
+      // created but no session yet.
       setInfo(
-        "Check your email to confirm. After confirming, sign in to continue.",
+        "Check your email to confirm, then sign in. (Tip: disable Confirm Email in Supabase Auth settings for faster MVP testing.)",
       );
-      setBusy(false);
-      return;
-    }
-
-    const { error: profileErr } = await supabase.from("profiles").insert({
-      id: user.id,
-      role,
-      email,
-    });
-    if (profileErr) {
-      setError(profileErr.message);
       setBusy(false);
       return;
     }
