@@ -143,6 +143,14 @@ export default function AssignmentsPage() {
         .update({ status: "available" })
         .eq("id", row.driver_id);
     }
+    if (next === "delivered") {
+      // Same idempotent invoice flow as the driver-side advance.
+      fetch("/api/invoices/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignment_id: row.id }),
+      }).catch(() => {});
+    }
     load();
   }
 

@@ -110,69 +110,18 @@ export default function DriverStatusPage() {
     if (!next) return;
     setBusy(true);
     setError(null);
-    const supabase = createClient();
 
-    // assignments.status
-    const { error: aErr } = await supabase
-      .from("assignments")
-      .update({ status: next })
-      .eq("id", assignment.id);
-    if (aErr) {
-      setError(aErr.message);
+    const res = await fetch("/api/assignments/advance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assignment_id: assignment.id }),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      setError(`Update failed: ${txt || res.status}`);
       setBusy(false);
       return;
     }
-
-    // mirror to loads.status: 'in_progress' for in-flight, 'delivered' for done
-    const loadStatus =
-      next === "delivered"
-        ? "delivered"
-        : next === "assigned"
-          ? "assigned"
-          : "in_progress";
-    const { error: lErr } = await supabase
-      .from("loads")
-      .update({ status: loadStatus })
-      .eq("id", assignment.load.id);
-    if (lErr) {
-      setError(lErr.message);
-      setBusy(false);
-      return;
-    }
-
-    if (next === "delivered") {
-      await supabase
-        .from("drivers")
-        .update({ status: "available" })
-        .eq("id", assignment.driver.id);
-
-      // Generate the invoice (server) — full body in Phase 12.
-      fetch("/api/invoices/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assignment_id: assignment.id }),
-      }).catch(() => {});
-
-      // Notify owner.
-      const { data: company } = await supabase
-        .from("companies")
-        .select("owner_id")
-        .eq("id", assignment.load.company_id)
-        .single();
-      if (company?.owner_id) {
-        fetch("/api/notify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            user_id: company.owner_id,
-            type: "load_delivered",
-            message: `Load ${assignment.load.origin} → ${assignment.load.destination} delivered`,
-            payload: { assignment_id: assignment.id },
-          }),
-        }).catch(() => {});
-      }
-    }
-
     await load();
     setBusy(false);
   }

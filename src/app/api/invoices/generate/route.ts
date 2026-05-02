@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { pdf } from "@react-pdf/renderer";
 import { Resend } from "resend";
 import React from "react";
+import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { InvoicePdf, type InvoicePdfData } from "@/lib/pdf/invoice-pdf";
+import { sendNotification } from "@/lib/notify";
 
 export const runtime = "nodejs";
 
@@ -21,6 +23,14 @@ export async function POST(req: Request) {
       { error: "assignment_id required" },
       { status: 400 },
     );
+  }
+
+  const userClient = createClient();
+  const {
+    data: { user },
+  } = await userClient.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const supabase = createAdminClient();
@@ -53,6 +63,21 @@ export async function POST(req: Request) {
       { error: "Load or driver missing" },
       { status: 400 },
     );
+  }
+
+  // Authorization: caller must be the assignment's driver OR the owner of
+  // the load's company. Anyone else is locked out.
+  const [{ data: ownerCompany }] = await Promise.all([
+    supabase
+      .from("companies")
+      .select("owner_id")
+      .eq("id", load.company_id)
+      .single(),
+  ]);
+  const isDriver = driver.user_id === user.id;
+  const isOwner = ownerCompany?.owner_id === user.id;
+  if (!isDriver && !isOwner) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // 2. Idempotency — if an invoice already exists for this load, return it.
@@ -178,22 +203,17 @@ export async function POST(req: Request) {
   }
 
   // 8. Notify owner.
-  try {
-    const origin = req.headers.get("origin") ?? process.env.NEXT_PUBLIC_APP_URL;
-    if (origin && company.owner_id) {
-      await fetch(`${origin}/api/notify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: company.owner_id,
-          type: "invoice_sent",
-          message: `Invoice ${invoiceNumber} sent to ${load.broker_email}`,
-          payload: { invoice_id: inserted.id },
-        }),
+  if (company.owner_id) {
+    try {
+      await sendNotification({
+        user_id: company.owner_id,
+        type: "invoice_sent",
+        message: `Invoice ${invoiceNumber} sent to ${load.broker_email}`,
+        payload: { invoice_id: inserted.id },
       });
+    } catch (err) {
+      console.warn("[invoices] notify owner failed", err);
     }
-  } catch (err) {
-    console.warn("[invoices] notify owner failed", err);
   }
 
   return NextResponse.json({

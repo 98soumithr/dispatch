@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
+import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -19,11 +20,20 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+
+  const userClient = createClient();
+  const {
+    data: { user },
+  } = await userClient.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const supabase = createAdminClient();
   const { data: invoice, error: invErr } = await supabase
     .from("invoices")
     .select(
-      "id, invoice_number, amount, pdf_url, load:load_id (origin, destination, broker_email, company_id)",
+      "id, invoice_number, amount, pdf_url, created_at, load:load_id (origin, destination, broker_email, company_id)",
     )
     .eq("id", body.invoice_id)
     .single();
@@ -39,6 +49,17 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+
+  // Authorization: caller must be the owner of the invoice's company.
+  const { data: company } = await supabase
+    .from("companies")
+    .select("owner_id")
+    .eq("id", load.company_id)
+    .single();
+  if (!company || company.owner_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
@@ -47,26 +68,24 @@ export async function POST(req: Request) {
     );
   }
 
-  // Re-fetch the PDF bytes from Storage so we can attach them.
+  // Re-fetch the PDF bytes from Storage so we can attach them. Storage
+  // path is keyed by year/INV-YYYY-NNNN — derive the year from
+  // invoice.created_at, with the current year as a fallback.
   let pdfBytes: Buffer | undefined;
-  try {
-    const path = `${new Date(invoice.id).getFullYear()}/${invoice.invoice_number}.pdf`;
-    // We don't know the year column directly here; fall back to listing.
-    const guesses = [
-      `${new Date().getFullYear()}/${invoice.invoice_number}.pdf`,
-      `${new Date().getFullYear() - 1}/${invoice.invoice_number}.pdf`,
-    ];
-    for (const p of [path, ...guesses]) {
-      const { data: dl } = await supabase.storage
-        .from("invoices")
-        .download(p);
-      if (dl) {
-        pdfBytes = Buffer.from(await dl.arrayBuffer());
-        break;
-      }
+  const created = new Date(invoice.created_at);
+  const yearGuesses = Array.from(
+    new Set([
+      isNaN(created.getTime()) ? new Date().getFullYear() : created.getFullYear(),
+      new Date().getFullYear(),
+    ]),
+  );
+  for (const y of yearGuesses) {
+    const p = `${y}/${invoice.invoice_number}.pdf`;
+    const { data: dl } = await supabase.storage.from("invoices").download(p);
+    if (dl) {
+      pdfBytes = Buffer.from(await dl.arrayBuffer());
+      break;
     }
-  } catch {
-    /* fall through — send without attachment */
   }
 
   const resend = new Resend(apiKey);

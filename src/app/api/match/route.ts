@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { haversineMiles } from "@/lib/haversine";
+import { sendNotification } from "@/lib/notify";
 
 export const runtime = "nodejs";
 
 type Body = {
   load_id: string;
+  // exclude_driver_ids in the request body is no longer trusted — we read
+  // load_declines from the DB. Field kept for backwards compatibility.
   exclude_driver_ids?: string[];
 };
 
@@ -21,7 +25,17 @@ export async function POST(req: Request) {
   if (!body.load_id) {
     return NextResponse.json({ error: "load_id required" }, { status: 400 });
   }
-  const exclude = Array.from(new Set(body.exclude_driver_ids ?? []));
+
+  // Auth — match must be invoked by an authed user (owner posting a load,
+  // or a driver who just declined). Verify against the load's company below.
+  const userClient = createClient();
+  const {
+    data: { user },
+  } = await userClient.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const supabase = createAdminClient();
 
   // 1. Fetch the load.
@@ -35,6 +49,29 @@ export async function POST(req: Request) {
   if (loadErr || !load) {
     return NextResponse.json({ error: "Load not found" }, { status: 404 });
   }
+
+  // 2. Caller must be the company's owner OR a driver in that company.
+  const [{ data: ownerCompany }, { data: driverRow }] = await Promise.all([
+    supabase
+      .from("companies")
+      .select("id, owner_id, max_deadhead")
+      .eq("id", load.company_id)
+      .single(),
+    supabase
+      .from("drivers")
+      .select("id, company_id")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+  ]);
+  if (!ownerCompany) {
+    return NextResponse.json({ error: "Company not found" }, { status: 404 });
+  }
+  const isOwner = ownerCompany.owner_id === user.id;
+  const isCompanyDriver = driverRow?.company_id === load.company_id;
+  if (!isOwner && !isCompanyDriver) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   if (load.status !== "new") {
     return NextResponse.json({
       ok: true,
@@ -49,17 +86,16 @@ export async function POST(req: Request) {
     });
   }
 
-  // 2. Fetch the company preferences.
-  const { data: company, error: companyErr } = await supabase
-    .from("companies")
-    .select("id, owner_id, max_deadhead")
-    .eq("id", load.company_id)
-    .single();
-  if (companyErr || !company) {
-    return NextResponse.json({ error: "Company not found" }, { status: 404 });
-  }
+  // 3. Available drivers, excluding everyone who declined this load.
+  const { data: declines } = await supabase
+    .from("load_declines")
+    .select("driver_id")
+    .eq("load_id", load.id);
+  const excludeFromDb = (declines ?? []).map((d) => d.driver_id);
+  const exclude = Array.from(
+    new Set([...(body.exclude_driver_ids ?? []), ...excludeFromDb]),
+  );
 
-  // 3. Drivers (available, in this company, not excluded).
   let driversQ = supabase
     .from("drivers")
     .select(
@@ -94,7 +130,7 @@ export async function POST(req: Request) {
       { lat: d.current_lat, lng: d.current_lng },
       { lat: load.origin_lat, lng: load.origin_lng },
     );
-    if (deadhead > Number(company.max_deadhead)) continue;
+    if (deadhead > Number(ownerCompany.max_deadhead)) continue;
     if (Number(d.hos_remaining) < requiredHours) continue;
 
     const score = load.rate / load.miles - deadhead * 0.01;
@@ -104,10 +140,11 @@ export async function POST(req: Request) {
   candidates.sort((a, b) => b.score - a.score);
   const top = candidates.slice(0, 3);
 
-  // 4. Notify the top driver, or notify the owner if none.
+  // 4. Notify the top driver, or notify the owner if none. Direct call —
+  // no server-to-server HTTP.
   if (top.length === 0) {
-    await fireNotify({
-      user_id: company.owner_id,
+    await sendNotification({
+      user_id: ownerCompany.owner_id,
       type: "no_drivers",
       message: "No available drivers for this load.",
       payload: { load_id: load.id },
@@ -115,10 +152,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, candidates: [] });
   }
 
-  await fireNotify({
+  await sendNotification({
     user_id: top[0].user_id,
     type: "load_offered",
-    message: `New load: ${load.origin} → going out at $${(load.rate / load.miles).toFixed(2)}/mi`,
+    message: `New load: ${load.origin} → ${(load.rate / load.miles).toFixed(2)}/mi`,
     payload: { load_id: load.id, deadhead_miles: Math.round(top[0].deadhead) },
   });
 
@@ -127,31 +164,4 @@ export async function POST(req: Request) {
     candidates: top,
     notified: top[0].driver_id,
   });
-}
-
-async function fireNotify(payload: {
-  user_id: string;
-  type: string;
-  message: string;
-  payload: Record<string, unknown>;
-}) {
-  // Best-effort. Notify endpoint is fully implemented in Phase 11.
-  const url = process.env.NEXT_PUBLIC_APP_URL ?? "";
-  const target = url ? `${url}/api/notify` : "/api/notify";
-  try {
-    if (url) {
-      await fetch(target, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-    } else {
-      // Same-origin server-to-server fetches in API routes are awkward without
-      // an absolute URL. The notify route is invoked client-side via the
-      // success paths in the UI; here we just log on the server.
-      console.log("[match] would notify", payload);
-    }
-  } catch (err) {
-    console.error("[match] notify failed", err);
-  }
 }

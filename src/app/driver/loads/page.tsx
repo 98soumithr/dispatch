@@ -112,50 +112,17 @@ export default function DriverLoadsPage() {
     if (!driver) return;
     setActing(l.id);
     setError(null);
-    const supabase = createClient();
-    const { error: assignErr } = await supabase.from("assignments").insert({
-      load_id: l.id,
-      driver_id: driver.id,
-      status: "assigned",
+    const res = await fetch("/api/assignments/accept", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ load_id: l.id }),
     });
-    if (assignErr) {
-      setError(assignErr.message);
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      setError(`Accept failed: ${txt || res.status}`);
       setActing(null);
       return;
     }
-    const { error: loadErr } = await supabase
-      .from("loads")
-      .update({ status: "assigned" })
-      .eq("id", l.id);
-    if (loadErr) {
-      setError(loadErr.message);
-      setActing(null);
-      return;
-    }
-    await supabase
-      .from("drivers")
-      .update({ status: "busy" })
-      .eq("id", driver.id);
-
-    // Notify owner (best-effort; full body lands in Phase 11)
-    const { data: company } = await supabase
-      .from("companies")
-      .select("owner_id")
-      .eq("id", l.company_id)
-      .single();
-    if (company?.owner_id) {
-      fetch("/api/notify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: company.owner_id,
-          type: "load_accepted",
-          message: `Load ${l.origin} → ${l.destination} accepted`,
-          payload: { load_id: l.id, driver_id: driver.id },
-        }),
-      }).catch(() => {});
-    }
-
     setActing(null);
     window.location.href = "/driver/status";
   }
