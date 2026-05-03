@@ -29,6 +29,8 @@ type Assignment = {
   load: {
     id: string;
     origin: string;
+    origin_lat: number | null;
+    origin_lng: number | null;
     destination: string;
     destination_lat: number | null;
     destination_lng: number | null;
@@ -97,7 +99,7 @@ export default function DashboardPage() {
       supabase
         .from("assignments")
         .select(
-          "id, status, assigned_at, driver_id, load:load_id (id, origin, destination, destination_lat, destination_lng, rate, company_id)",
+          "id, status, assigned_at, driver_id, load:load_id (id, origin, origin_lat, origin_lng, destination, destination_lat, destination_lng, rate, company_id)",
         )
         .order("assigned_at", { ascending: false })
         .limit(50),
@@ -198,7 +200,9 @@ export default function DashboardPage() {
     [assignments],
   );
 
-  // Compute ETAs for active assignments.
+  // Compute ETAs for active assignments. Routes from the driver to whichever
+  // waypoint is "next" given the current status — pickup before pickup,
+  // destination after.
   useEffect(() => {
     if (!isLoaded) return;
     const g = (window as any).google;
@@ -206,21 +210,21 @@ export default function DashboardPage() {
     const ds = new g.maps.DirectionsService();
     activeDriverAssignments.forEach((a) => {
       const d = drivers.find((dr) => dr.id === a.driver_id);
-      if (
-        !d?.current_lat ||
-        !d?.current_lng ||
-        !a.load?.destination_lat ||
-        !a.load?.destination_lng
-      ) {
-        return;
-      }
+      if (!d?.current_lat || !d?.current_lng) return;
+      const heading = headingFor(a.status);
+      const target =
+        heading === "pickup"
+          ? a.load?.origin_lat != null && a.load?.origin_lng != null
+            ? { lat: a.load.origin_lat, lng: a.load.origin_lng }
+            : null
+          : a.load?.destination_lat != null && a.load?.destination_lng != null
+            ? { lat: a.load.destination_lat, lng: a.load.destination_lng }
+            : null;
+      if (!target) return;
       ds.route(
         {
           origin: { lat: d.current_lat, lng: d.current_lng },
-          destination: {
-            lat: a.load.destination_lat,
-            lng: a.load.destination_lng,
-          },
+          destination: target,
           travelMode: g.maps.TravelMode.DRIVING,
         },
         (res: any, status: string) => {
@@ -270,33 +274,91 @@ export default function DashboardPage() {
               fullscreenControl: false,
             }}
           >
+            {/* A markers — load origins for active assignments */}
+            {activeDriverAssignments.map((a) => {
+              if (a.load?.origin_lat == null || a.load?.origin_lng == null)
+                return null;
+              return (
+                <Marker
+                  key={`origin-${a.id}`}
+                  position={{ lat: a.load.origin_lat, lng: a.load.origin_lng }}
+                  label={{
+                    text: "A",
+                    color: "#fff",
+                    fontSize: "11px",
+                    fontWeight: "700",
+                  }}
+                  icon={{
+                    path: (window as any).google?.maps?.SymbolPath?.CIRCLE,
+                    scale: 10,
+                    fillColor: "#16a34a", // green = pickup
+                    fillOpacity: 1,
+                    strokeColor: "#fff",
+                    strokeWeight: 2,
+                  }}
+                  title={`Pickup: ${a.load.origin}`}
+                />
+              );
+            })}
+
+            {/* B markers — load destinations for active assignments */}
+            {activeDriverAssignments.map((a) => {
+              if (
+                a.load?.destination_lat == null ||
+                a.load?.destination_lng == null
+              )
+                return null;
+              return (
+                <Marker
+                  key={`dest-${a.id}`}
+                  position={{
+                    lat: a.load.destination_lat,
+                    lng: a.load.destination_lng,
+                  }}
+                  label={{
+                    text: "B",
+                    color: "#fff",
+                    fontSize: "11px",
+                    fontWeight: "700",
+                  }}
+                  icon={{
+                    path: (window as any).google?.maps?.SymbolPath?.CIRCLE,
+                    scale: 10,
+                    fillColor: "#dc2626", // red = drop-off
+                    fillOpacity: 1,
+                    strokeColor: "#fff",
+                    strokeWeight: 2,
+                  }}
+                  title={`Drop-off: ${a.load.destination}`}
+                />
+              );
+            })}
+
+            {/* Driver markers — colored by current step of the trip */}
             {mapped.map((d) => {
               const a = activeDriverAssignments.find(
                 (x) => x.driver_id === d.id,
               );
+              const heading = a ? headingFor(a.status) : null;
+              const color = driverColorFor(d.status, heading);
               return (
                 <Marker
                   key={d.id}
                   position={{ lat: d.current_lat!, lng: d.current_lng! }}
                   onClick={() => setSelectedDriver(d.id)}
-                  label={{
-                    text: d.status === "busy" ? "B" : "A",
-                    color: "#fff",
-                    fontSize: "12px",
-                    fontWeight: "600",
-                  }}
+                  zIndex={1000}
                   icon={{
                     path: (window as any).google?.maps?.SymbolPath?.CIRCLE,
-                    scale: 10,
-                    fillColor: d.status === "busy" ? "#7c3aed" : "#0f766e",
+                    scale: 11,
+                    fillColor: color,
                     fillOpacity: 1,
                     strokeColor: "#fff",
-                    strokeWeight: 2,
+                    strokeWeight: 3,
                   }}
                 >
                   {selectedDriver === d.id && (
                     <InfoWindow onCloseClick={() => setSelectedDriver(null)}>
-                      <div className="text-sm">
+                      <div className="text-sm space-y-1">
                         <div className="font-medium">
                           {profiles[d.user_id]?.name ?? "Driver"}
                         </div>
@@ -304,17 +366,22 @@ export default function DashboardPage() {
                           {d.truck_type} · {d.status}
                         </div>
                         {a?.load && (
-                          <div className="mt-1 text-xs">
-                            <div>{a.load.origin}</div>
-                            <div className="text-slate-500">
-                              → {a.load.destination}
+                          <>
+                            <div className="text-xs text-slate-700 mt-1">
+                              {statusLabel(a.status)}
+                            </div>
+                            <div className="text-xs">
+                              <div>{a.load.origin}</div>
+                              <div className="text-slate-500">
+                                → {a.load.destination}
+                              </div>
                             </div>
                             {etas[a.id] && (
-                              <div className="text-slate-700 mt-1">
+                              <div className="text-xs text-slate-700">
                                 ETA {etas[a.id]}
                               </div>
                             )}
-                          </div>
+                          </>
                         )}
                       </div>
                     </InfoWindow>
@@ -322,29 +389,67 @@ export default function DashboardPage() {
                 </Marker>
               );
             })}
+
+            {/* Polyline — driver to whichever waypoint is next given the status */}
             {activeDriverAssignments.map((a) => {
               const d = drivers.find((dr) => dr.id === a.driver_id);
-              if (
-                !d?.current_lat ||
-                !d?.current_lng ||
-                !a.load?.destination_lat ||
-                !a.load?.destination_lng
-              ) {
-                return null;
-              }
+              if (!d?.current_lat || !d?.current_lng) return null;
+              const heading = headingFor(a.status);
+              const target =
+                heading === "pickup"
+                  ? a.load?.origin_lat != null && a.load?.origin_lng != null
+                    ? {
+                        lat: a.load.origin_lat,
+                        lng: a.load.origin_lng,
+                      }
+                    : null
+                  : a.load?.destination_lat != null &&
+                      a.load?.destination_lng != null
+                    ? {
+                        lat: a.load.destination_lat,
+                        lng: a.load.destination_lng,
+                      }
+                    : null;
+              if (!target) return null;
               return (
                 <Polyline
-                  key={`line-${a.id}`}
+                  key={`leg-${a.id}`}
                   path={[
                     { lat: d.current_lat, lng: d.current_lng },
+                    target,
+                  ]}
+                  options={{
+                    strokeColor: heading === "pickup" ? "#2563eb" : "#7c3aed",
+                    strokeOpacity: 0.7,
+                    strokeWeight: 3,
+                  }}
+                />
+              );
+            })}
+
+            {/* Faint full-trip polyline (origin → destination) so the route
+                context is visible regardless of where the driver is. */}
+            {activeDriverAssignments.map((a) => {
+              if (
+                a.load?.origin_lat == null ||
+                a.load?.origin_lng == null ||
+                a.load?.destination_lat == null ||
+                a.load?.destination_lng == null
+              )
+                return null;
+              return (
+                <Polyline
+                  key={`route-${a.id}`}
+                  path={[
+                    { lat: a.load.origin_lat, lng: a.load.origin_lng },
                     {
                       lat: a.load.destination_lat,
                       lng: a.load.destination_lng,
                     },
                   ]}
                   options={{
-                    strokeColor: "#7c3aed",
-                    strokeOpacity: 0.6,
+                    strokeColor: "#94a3b8",
+                    strokeOpacity: 0.4,
                     strokeWeight: 2,
                   }}
                 />
@@ -412,6 +517,39 @@ export default function DashboardPage() {
       </div>
     </div>
   );
+}
+
+// Maps an assignment status to which leg of the trip the driver is on.
+// "pickup" = heading to load origin. "dropoff" = heading to load destination.
+function headingFor(status: string): "pickup" | "dropoff" {
+  return status === "assigned" || status === "en_route" ? "pickup" : "dropoff";
+}
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case "assigned":
+      return "Assigned — heading to pickup";
+    case "en_route":
+      return "En route to pickup";
+    case "picked_up":
+      return "Picked up — heading to drop-off";
+    case "in_transit":
+      return "In transit to drop-off";
+    case "delivered":
+      return "Delivered";
+    case "cancelled":
+      return "Cancelled";
+    default:
+      return status;
+  }
+}
+
+function driverColorFor(status: string, heading: "pickup" | "dropoff" | null): string {
+  if (status === "available") return "#0f766e"; // teal
+  if (status === "offline") return "#94a3b8"; // slate
+  if (heading === "pickup") return "#2563eb"; // blue — going to pickup
+  if (heading === "dropoff") return "#7c3aed"; // purple — heading to drop-off
+  return "#7c3aed";
 }
 
 function Kpi({ label, value }: { label: string; value: string }) {
