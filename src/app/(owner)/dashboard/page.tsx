@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   GoogleMap,
@@ -461,6 +462,61 @@ export default function DashboardPage() {
             Loading map…
           </div>
         )}
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-lg font-semibold">Drivers</h2>
+          <Link
+            href="/drivers"
+            className="text-xs text-slate-600 hover:underline"
+          >
+            See all
+          </Link>
+        </div>
+        <div className="border border-slate-200 rounded-lg overflow-hidden">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 text-slate-700">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium">Driver</th>
+                <th className="text-left px-3 py-2 font-medium">Truck</th>
+                <th className="text-left px-3 py-2 font-medium">Status</th>
+                <th className="text-left px-3 py-2 font-medium">Location</th>
+              </tr>
+            </thead>
+            <tbody>
+              {drivers.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-3 py-6 text-center text-slate-500">
+                    No drivers yet. Share your join code to get them onboarded.
+                  </td>
+                </tr>
+              )}
+              {drivers.slice(0, 5).map((d) => (
+                <tr key={d.id} className="border-t border-slate-100">
+                  <td className="px-3 py-2">
+                    {profiles[d.user_id]?.name ?? "Driver"}
+                  </td>
+                  <td className="px-3 py-2">{d.truck_type ?? "—"}</td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full border ${statusBadgeClass(
+                        d.status,
+                      )}`}
+                    >
+                      {d.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-xs text-slate-600">
+                    {d.current_location_text ?? (
+                      <span className="text-slate-400">Not set</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="space-y-3">
