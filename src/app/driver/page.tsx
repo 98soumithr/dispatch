@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Clock, MapPin, Navigation, Truck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   PlacesAutocomplete,
@@ -88,28 +89,63 @@ export default function DriverHomePage() {
   if (loading) return <p className="text-sm text-slate-500">Loading…</p>;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">{name ?? "Driver"}</h1>
+    <div className="space-y-5">
+      {/* Header card */}
+      <div className="rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-700 text-white p-5 shadow-sm">
+        <p className="text-xs font-medium uppercase tracking-wide text-indigo-100">
+          Welcome back
+        </p>
+        <h1 className="text-2xl font-bold mt-1">{name ?? "Driver"}</h1>
         {driver && (
-          <p className="text-sm text-slate-600">
-            {driver.truck_type ?? "—"} · {driver.status} · {driver.hos_remaining}h HOS
-          </p>
+          <div className="mt-3 flex items-center gap-3 text-sm text-indigo-50">
+            <span className="inline-flex items-center gap-1">
+              <Truck size={14} /> {driver.truck_type ?? "—"}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <Clock size={14} /> {driver.hos_remaining}h HOS
+            </span>
+            <span
+              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
+                driver.status === "available"
+                  ? "bg-emerald-400/20 text-emerald-50"
+                  : driver.status === "busy"
+                    ? "bg-amber-400/20 text-amber-50"
+                    : "bg-slate-400/20 text-slate-50"
+              }`}
+            >
+              {driver.status}
+            </span>
+          </div>
         )}
       </div>
 
-      <div className="rounded-lg border border-slate-200 p-4 space-y-1">
-        <div className="text-xs uppercase tracking-wide text-slate-500">
-          Current location
-        </div>
-        <div className="text-sm">
-          {driver?.current_location_text ?? "Not set."}
+      {/* Current location card */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex items-start gap-3">
+          <div className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 shrink-0">
+            <MapPin size={18} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs uppercase tracking-wide font-medium text-slate-500">
+              Current location
+            </div>
+            <div className="text-sm text-slate-900 mt-0.5 break-words">
+              {driver?.current_location_text ?? "Not set."}
+            </div>
+          </div>
         </div>
       </div>
 
-      <form onSubmit={updateLocation} className="space-y-3">
-        <div className="text-sm font-medium text-slate-700">
-          Update my location
+      {/* Update location form */}
+      <form
+        onSubmit={updateLocation}
+        className="rounded-xl border border-slate-200 bg-white p-4 space-y-3"
+      >
+        <div className="flex items-center gap-2">
+          <Navigation size={16} className="text-slate-500" />
+          <span className="text-sm font-semibold text-slate-900">
+            Update my location
+          </span>
         </div>
         <PlacesAutocomplete value={location} onChange={setLocation} />
         {info && <p className="text-sm text-emerald-600">{info}</p>}
@@ -117,7 +153,7 @@ export default function DriverHomePage() {
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-md bg-slate-900 text-white py-2 text-sm font-medium hover:bg-slate-800 disabled:opacity-60"
+          className="w-full rounded-lg bg-slate-900 text-white py-2.5 text-sm font-semibold hover:bg-slate-800 disabled:opacity-60 transition"
         >
           {busy ? "Saving…" : "Save location"}
         </button>

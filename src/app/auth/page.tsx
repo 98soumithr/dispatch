@@ -2,7 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  CheckCircle2,
+  ClipboardList,
+  FileText,
+  MapPin,
+  Truck,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { Brand } from "@/components/brand";
 
 type Tab = "signin" | "signup";
 type Role = "owner" | "driver";
@@ -25,8 +33,6 @@ export default function AuthPage() {
     setInfo(null);
 
     const supabase = createClient();
-    // Pass role in user metadata so the on_auth_user_created trigger can
-    // populate public.profiles atomically (no client-side insert needed).
     const { data, error: authErr } = await supabase.auth.signUp({
       email,
       password,
@@ -39,8 +45,6 @@ export default function AuthPage() {
     }
 
     if (!data.session) {
-      // Email confirmation is enabled in Supabase Auth settings — user was
-      // created but no session yet.
       setInfo(
         "Check your email to confirm, then sign in. (Tip: disable Confirm Email in Supabase Auth settings for faster MVP testing.)",
       );
@@ -94,114 +98,193 @@ export default function AuthPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center px-6">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="text-center space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight">Dispatch</h1>
-          <p className="text-sm text-slate-600">
-            {tab === "signin" ? "Sign in to your account" : "Create an account"}
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 rounded-md border border-slate-200 p-1 bg-slate-50">
-          <button
-            type="button"
-            onClick={() => setTab("signin")}
-            className={`text-sm py-2 rounded transition ${
-              tab === "signin" ? "bg-white shadow-sm font-medium" : "text-slate-600"
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("signup")}
-            className={`text-sm py-2 rounded transition ${
-              tab === "signup" ? "bg-white shadow-sm font-medium" : "text-slate-600"
-            }`}
-          >
-            Sign Up
-          </button>
-        </div>
-
-        <form
-          onSubmit={tab === "signup" ? handleSignUp : handleSignIn}
-          className="space-y-4"
-        >
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-slate-700">Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-              autoComplete="email"
+    <main className="min-h-screen grid grid-cols-1 lg:grid-cols-2">
+      {/* Left — brand panel */}
+      <aside className="hidden lg:flex flex-col justify-between bg-gradient-to-br from-indigo-600 via-indigo-700 to-slate-900 text-white p-12">
+        <Brand size="md" className="text-white" />
+        <div className="space-y-8 max-w-md">
+          <h2 className="text-4xl font-bold leading-tight tracking-tight">
+            One tool from load to invoice.
+          </h2>
+          <ul className="space-y-4 text-indigo-100">
+            <Highlight
+              icon={<ClipboardList size={18} />}
+              text="Post a load, the right driver hears about it within 2 minutes."
             />
-          </div>
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-slate-700">Password</label>
-            <input
-              type="password"
-              required
-              minLength={6}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-              autoComplete={tab === "signup" ? "new-password" : "current-password"}
+            <Highlight
+              icon={<MapPin size={18} />}
+              text="Live driver location and ETA on every active trip."
             />
+            <Highlight
+              icon={<FileText size={18} />}
+              text="Driver marks delivered → broker gets the invoice PDF automatically."
+            />
+            <Highlight
+              icon={<Truck size={18} />}
+              text="Manual override at every step. You stay in control."
+            />
+          </ul>
+        </div>
+        <p className="text-xs text-indigo-200/70">
+          Built for trucking dispatch. Free tier ready.
+        </p>
+      </aside>
+
+      {/* Right — form */}
+      <section className="flex items-center justify-center p-6 sm:p-12">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="lg:hidden">
+            <Brand size="md" />
           </div>
 
-          {tab === "signup" && (
-            <fieldset className="space-y-2">
-              <legend className="text-sm font-medium text-slate-700">
-                I am signing up as
-              </legend>
-              <div className="grid grid-cols-2 gap-2">
-                {(["owner", "driver"] as Role[]).map((r) => (
-                  <label
-                    key={r}
-                    className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm cursor-pointer transition ${
-                      role === r
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-300 hover:bg-slate-50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="role"
-                      value={r}
-                      checked={role === r}
-                      onChange={() => setRole(r)}
-                      className="sr-only"
-                    />
-                    <span className="capitalize">{r}</span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-          )}
-
-          {error && (
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2">
-              {error}
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+              {tab === "signin" ? "Welcome back" : "Create your account"}
+            </h1>
+            <p className="text-sm text-slate-600 mt-1">
+              {tab === "signin"
+                ? "Sign in to your dispatch."
+                : "Pick a role and you're rolling in 30 seconds."}
             </p>
-          )}
-          {info && (
-            <p className="text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded p-2">
-              {info}
-            </p>
-          )}
+          </div>
 
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full rounded-md bg-slate-900 text-white px-4 py-2.5 text-sm font-medium hover:bg-slate-800 disabled:opacity-60 transition"
+          <div className="grid grid-cols-2 rounded-lg border border-slate-200 p-1 bg-slate-50">
+            <button
+              type="button"
+              onClick={() => setTab("signin")}
+              className={`text-sm py-2 rounded-md transition font-medium ${
+                tab === "signin"
+                  ? "bg-white shadow-sm text-slate-900"
+                  : "text-slate-600"
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab("signup")}
+              className={`text-sm py-2 rounded-md transition font-medium ${
+                tab === "signup"
+                  ? "bg-white shadow-sm text-slate-900"
+                  : "text-slate-600"
+              }`}
+            >
+              Sign Up
+            </button>
+          </div>
+
+          <form
+            onSubmit={tab === "signup" ? handleSignUp : handleSignIn}
+            className="space-y-4"
           >
-            {busy ? "Working..." : tab === "signup" ? "Create account" : "Sign in"}
-          </button>
-        </form>
-      </div>
+            <Field label="Email">
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={inputClass}
+                autoComplete="email"
+                placeholder="you@company.com"
+              />
+            </Field>
+            <Field label="Password">
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={inputClass}
+                autoComplete={tab === "signup" ? "new-password" : "current-password"}
+                placeholder="•••••••"
+              />
+            </Field>
+
+            {tab === "signup" && (
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-medium text-slate-700">
+                  I am signing up as
+                </legend>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["owner", "driver"] as Role[]).map((r) => (
+                    <label
+                      key={r}
+                      className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm cursor-pointer transition font-medium ${
+                        role === r
+                          ? "border-indigo-600 bg-indigo-50 text-indigo-700"
+                          : "border-slate-300 hover:bg-slate-50 text-slate-700"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="role"
+                        value={r}
+                        checked={role === r}
+                        onChange={() => setRole(r)}
+                        className="sr-only"
+                      />
+                      <span className="capitalize">{r}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+
+            {error && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-2.5">
+                {error}
+              </p>
+            )}
+            {info && (
+              <p className="text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-md p-2.5">
+                {info}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={busy}
+              className="w-full rounded-lg bg-indigo-600 text-white px-4 py-2.5 text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 transition shadow-sm"
+            >
+              {busy
+                ? "Working…"
+                : tab === "signup"
+                  ? "Create account"
+                  : "Sign in"}
+            </button>
+          </form>
+        </div>
+      </section>
     </main>
+  );
+}
+
+const inputClass =
+  "w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 transition";
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-sm font-medium text-slate-700">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function Highlight({ icon, text }: { icon: React.ReactNode; text: string }) {
+  return (
+    <li className="flex items-start gap-3">
+      <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-white/15 text-white shrink-0 mt-0.5">
+        {icon}
+      </span>
+      <span className="leading-relaxed">{text}</span>
+    </li>
   );
 }

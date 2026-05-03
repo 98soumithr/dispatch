@@ -9,6 +9,13 @@ import {
   Polyline,
   useJsApiLoader,
 } from "@react-google-maps/api";
+import {
+  ClipboardList,
+  Copy,
+  DollarSign,
+  PackageCheck,
+  Truck,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate, formatMoney, statusBadgeClass } from "@/lib/format";
 
@@ -246,21 +253,52 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-baseline justify-between flex-wrap gap-2">
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
-        {companyId && (
-          <p className="text-xs text-slate-500">
-            Driver join code:{" "}
-            <code className="px-2 py-0.5 bg-slate-100 rounded">{companyId}</code>
+      <div className="flex items-end justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-sm text-slate-600 mt-0.5">
+            Overview of today&apos;s loads, drivers, and revenue.
           </p>
+        </div>
+        {companyId && (
+          <button
+            type="button"
+            onClick={() => navigator.clipboard?.writeText(companyId)}
+            className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-md border border-slate-200 bg-white hover:border-slate-300 transition"
+            title="Click to copy"
+          >
+            <Copy size={12} />
+            Driver join code:{" "}
+            <code className="font-mono text-slate-900">{companyId.slice(0, 8)}…</code>
+          </button>
         )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Kpi label="Active loads" value={String(kpi.active)} />
-        <Kpi label="Available drivers" value={String(kpi.available)} />
-        <Kpi label="Delivered (MTD)" value={String(kpi.delivered)} />
-        <Kpi label="Revenue (MTD)" value={formatMoney(kpi.revenue)} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Kpi
+          label="Active loads"
+          value={String(kpi.active)}
+          icon={<ClipboardList size={18} />}
+          accent="indigo"
+        />
+        <Kpi
+          label="Available drivers"
+          value={String(kpi.available)}
+          icon={<Truck size={18} />}
+          accent="emerald"
+        />
+        <Kpi
+          label="Delivered (MTD)"
+          value={String(kpi.delivered)}
+          icon={<PackageCheck size={18} />}
+          accent="blue"
+        />
+        <Kpi
+          label="Revenue (MTD)"
+          value={formatMoney(kpi.revenue)}
+          icon={<DollarSign size={18} />}
+          accent="amber"
+        />
       </div>
 
       <div className="rounded-lg border border-slate-200 overflow-hidden">
@@ -608,13 +646,40 @@ function driverColorFor(status: string, heading: "pickup" | "dropoff" | null): s
   return "#7c3aed";
 }
 
-function Kpi({ label, value }: { label: string; value: string }) {
+type Accent = "indigo" | "emerald" | "blue" | "amber";
+
+function Kpi({
+  label,
+  value,
+  icon,
+  accent = "indigo",
+}: {
+  label: string;
+  value: string;
+  icon?: React.ReactNode;
+  accent?: Accent;
+}) {
+  const accentClasses: Record<Accent, string> = {
+    indigo: "bg-indigo-50 text-indigo-600",
+    emerald: "bg-emerald-50 text-emerald-600",
+    blue: "bg-blue-50 text-blue-600",
+    amber: "bg-amber-50 text-amber-600",
+  };
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <div className="text-xs uppercase tracking-wide text-slate-500">
-        {label}
+    <div className="rounded-xl border border-slate-200 bg-white p-5 hover:border-slate-300 hover:shadow-sm transition">
+      <div className="flex items-center justify-between">
+        <div className="text-xs uppercase tracking-wide font-medium text-slate-500">
+          {label}
+        </div>
+        {icon && (
+          <div
+            className={`inline-flex items-center justify-center w-8 h-8 rounded-lg ${accentClasses[accent]}`}
+          >
+            {icon}
+          </div>
+        )}
       </div>
-      <div className="text-2xl font-semibold mt-1">{value}</div>
+      <div className="text-3xl font-bold mt-2 text-slate-900">{value}</div>
     </div>
   );
 }
