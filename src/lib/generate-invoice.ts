@@ -110,10 +110,12 @@ export async function generateInvoice(
     },
     driverName: profile?.name ?? "Driver",
   };
-  const buffer = await pdf(
+  // @react-pdf/renderer's .toBuffer() returns a PDFKit PDFDocument (a
+  // Readable stream), NOT a Buffer. Drain it.
+  const stream = (await pdf(
     React.createElement(InvoicePdf, { data }) as any,
-  ).toBuffer();
-  const pdfBytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer as any);
+  ).toBuffer()) as unknown as NodeJS.ReadableStream;
+  const pdfBytes = await streamToBuffer(stream);
 
   // Storage.
   const path = `${year}/${invoiceNumber}.pdf`;
@@ -181,4 +183,15 @@ export async function generateInvoice(
   }
 
   return { ok: true, invoice: inserted, email_sent: emailSent };
+}
+
+function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    stream.on("data", (chunk: Buffer | string) =>
+      chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk),
+    );
+    stream.on("end", () => resolve(Buffer.concat(chunks)));
+    stream.on("error", reject);
+  });
 }
