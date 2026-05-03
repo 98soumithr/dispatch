@@ -24,6 +24,7 @@ type Row = {
     company_id: string;
   } | null;
   driver_name: string | null;
+  has_invoice: boolean;
 };
 
 const ALL_STATUSES: AssignmentStatus[] = [
@@ -66,7 +67,7 @@ export default function AssignmentsPage() {
     const { data, error: e } = await supabase
       .from("assignments")
       .select(
-        "id, status, assigned_at, driver_id, load:load_id (id, origin, destination, company_id), drivers!assignments_driver_id_fkey (user_id)",
+        "id, status, assigned_at, driver_id, load:load_id (id, origin, destination, company_id)",
       )
       .order("assigned_at", { ascending: false });
     if (e) {
@@ -82,12 +83,29 @@ export default function AssignmentsPage() {
         assigned_at: r.assigned_at,
         driver_id: r.driver_id,
         load: Array.isArray(r.load) ? r.load[0] : r.load,
-        user_id: Array.isArray(r.drivers) ? r.drivers[0]?.user_id : r.drivers?.user_id,
       }))
       .filter((r) => r.load?.company_id === company.id);
 
+    // Resolve driver -> profile.name in two simple queries (PostgREST FK
+    // join syntax was returning empty results in some shapes).
+    const driverIds = Array.from(
+      new Set(rowsRaw.map((r) => r.driver_id).filter(Boolean)),
+    );
+    let userIdByDriver: Record<string, string> = {};
+    if (driverIds.length) {
+      const { data: drs } = await supabase
+        .from("drivers")
+        .select("id, user_id")
+        .in("id", driverIds);
+      userIdByDriver = Object.fromEntries(
+        ((drs as { id: string; user_id: string }[]) ?? []).map((d) => [
+          d.id,
+          d.user_id,
+        ]),
+      );
+    }
     const userIds = Array.from(
-      new Set(rowsRaw.map((r) => r.user_id).filter(Boolean)),
+      new Set(Object.values(userIdByDriver).filter(Boolean)),
     );
     let nameByUser: Record<string, string> = {};
     if (userIds.length) {
@@ -103,15 +121,33 @@ export default function AssignmentsPage() {
       );
     }
 
+    // Find which assignments already have an invoice so the UI can show
+    // "View invoice" instead of "Generate invoice".
+    const loadIds = rowsRaw.map((r) => r.load?.id).filter(Boolean) as string[];
+    let invoicedLoadIds = new Set<string>();
+    if (loadIds.length) {
+      const { data: invs } = await supabase
+        .from("invoices")
+        .select("load_id")
+        .in("load_id", loadIds);
+      invoicedLoadIds = new Set(
+        ((invs as { load_id: string }[]) ?? []).map((i) => i.load_id),
+      );
+    }
+
     setRows(
-      rowsRaw.map((r) => ({
-        id: r.id,
-        status: r.status,
-        assigned_at: r.assigned_at,
-        driver_id: r.driver_id,
-        load: r.load,
-        driver_name: r.user_id ? nameByUser[r.user_id] ?? null : null,
-      })),
+      rowsRaw.map((r) => {
+        const userId = userIdByDriver[r.driver_id];
+        return {
+          id: r.id,
+          status: r.status,
+          assigned_at: r.assigned_at,
+          driver_id: r.driver_id,
+          load: r.load,
+          driver_name: userId ? nameByUser[userId] ?? null : null,
+          has_invoice: r.load?.id ? invoicedLoadIds.has(r.load.id) : false,
+        };
+      }),
     );
     setLoading(false);
   }
@@ -150,6 +186,21 @@ export default function AssignmentsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ assignment_id: row.id }),
       }).catch(() => {});
+    }
+    load();
+  }
+
+  async function generateInvoice(row: Row) {
+    setError(null);
+    const res = await fetch("/api/invoices/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assignment_id: row.id }),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      setError(`Invoice generation failed: ${txt || res.status}`);
+      return;
     }
     load();
   }
@@ -240,7 +291,7 @@ export default function AssignmentsPage() {
                     {formatDate(r.assigned_at)}
                   </td>
                   <td className="px-3 py-2">
-                    {active ? (
+                    {active && (
                       <div className="flex items-center gap-2">
                         <select
                           value={r.status}
@@ -263,7 +314,22 @@ export default function AssignmentsPage() {
                           Cancel
                         </button>
                       </div>
-                    ) : (
+                    )}
+                    {r.status === "delivered" && !r.has_invoice && (
+                      <button
+                        type="button"
+                        onClick={() => generateInvoice(r)}
+                        className="text-xs text-slate-700 hover:underline"
+                      >
+                        Generate invoice
+                      </button>
+                    )}
+                    {r.status === "delivered" && r.has_invoice && (
+                      <span className="text-xs text-emerald-700">
+                        Invoice sent
+                      </span>
+                    )}
+                    {!active && r.status !== "delivered" && (
                       <span className="text-xs text-slate-400">—</span>
                     )}
                   </td>
