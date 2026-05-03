@@ -77,11 +77,15 @@ export default function AuthPage() {
       .from("profiles")
       .select("role, onboarding_complete")
       .eq("id", data.user.id)
-      .single();
-    if (profileErr || !profile) {
+      .maybeSingle();
+    if (profileErr) {
+      setError(profileErr.message);
+      setBusy(false);
+      return;
+    }
+    if (!profile) {
       setError(
-        profileErr?.message ??
-          "Profile not found. Try signing up again or contact support.",
+        "Your account exists but is missing a profile row. Ask your admin to backfill profiles, or delete the user in Supabase Auth and sign up again.",
       );
       setBusy(false);
       return;
