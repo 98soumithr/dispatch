@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendNotification } from "@/lib/notify";
+import { generateInvoice } from "@/lib/generate-invoice";
 
 export const runtime = "nodejs";
 
@@ -89,21 +90,15 @@ export async function POST(req: Request) {
       .update({ status: "available" })
       .eq("id", assignment.driver_id);
 
-    // Trigger invoice generation server-to-server (same process — direct call
-    // would be cleaner, but the route already encapsulates the storage +
-    // email + idempotency logic, so we call it via fetch using the request's
-    // own origin).
+    // Direct call — no HTTP, no cookie forwarding. The driver is already
+    // authorised (we verified driverUserId === user.id above).
     try {
-      const origin = new URL(req.url).origin;
-      await fetch(`${origin}/api/invoices/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // Forward the caller's cookies so the invoice route's auth check passes.
-        cookie: req.headers.get("cookie") ?? "",
-        body: JSON.stringify({ assignment_id: assignment.id }),
-      } as any);
+      const inv = await generateInvoice({ assignment_id: assignment.id });
+      if (!inv.ok) {
+        console.warn("[advance] invoice generation failed", inv);
+      }
     } catch (err) {
-      console.warn("[advance] invoice trigger failed", err);
+      console.warn("[advance] invoice generation threw", err);
     }
 
     if (load?.company_id) {
